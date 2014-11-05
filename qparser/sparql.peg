@@ -1,0 +1,369 @@
+# SPARQL grammar
+
+package qparser
+
+type SparqlGraph Peg {
+    *Schema
+    label, s, p, o string
+}
+
+queryContainer <- skip prolog query !.
+
+prolog <- ( prefixDecl / baseDecl )*
+
+prefixDecl <- PREFIX pnPrefix? COLON iri
+
+baseDecl <- BASE iri
+
+query <- selectQuery / constructQuery / describeQuery / askQuery
+selectQuery <- select datasetClause* whereClause solutionModifier
+select <- SELECT ( DISTINCT / REDUCED )? ( STAR / projectionElem+ )
+subSelect <- select whereClause solutionModifier
+constructQuery <- construct datasetClause* whereClause solutionModifier
+construct <- CONSTRUCT LBRACE triplesBlock? RBRACE
+describeQuery <- describe datasetClause* whereClause? solutionModifier
+describe <- DESCRIBE ( STAR / var / iriref )
+askQuery <- ASK datasetClause* whereClause
+
+projectionElem <- var / LPAREN expression AS var RPAREN
+
+datasetClause <- FROM NAMED? iriref
+
+whereClause <- WHERE? groupGraphPattern
+
+groupGraphPattern <- LBRACE ( subSelect / graphPattern ) RBRACE
+
+graphPattern <- basicGraphPattern? ( graphPatternNotTriples DOT? graphPattern )?
+
+graphPatternNotTriples <- optionalGraphPattern / groupOrUnionGraphPattern / graphGraphPattern / minusGraphPattern / serviceGraphPattern
+
+serviceGraphPattern <- SERVICE SILENT?  ( var / iriref ) groupGraphPattern
+
+optionalGraphPattern <- OPTIONAL LBRACE ( subSelect / graphPattern ) RBRACE
+
+groupOrUnionGraphPattern <- groupGraphPattern ( UNION groupOrUnionGraphPattern )?
+
+graphGraphPattern <- GRAPH ( var / iriref ) groupGraphPattern
+
+minusGraphPattern <- MINUSSETOPER groupGraphPattern
+
+basicGraphPattern <- triplesBlock ( filterOrBind DOT? triplesBlock? )* / ( filterOrBind DOT? triplesBlock? )+
+
+filterOrBind <- FILTER constraint / BIND LPAREN expression AS var RPAREN
+
+constraint <- brackettedExpression / builtinCall / functionCall
+
+triplesBlock <- triplesSameSubjectPath ( DOT triplesSameSubjectPath )* DOT?
+
+triplesSameSubjectPath <- ( <varOrTerm> { p.s = p.label } propertyListPath / triplesNodePath propertyListPath? )
+
+varOrTerm <- var / graphTerm
+
+graphTerm <- iriref / literal / numericLiteral / booleanLiteral / blankNode / nil
+
+triplesNodePath <- collectionPath / blankNodePropertyListPath
+
+collectionPath <- LPAREN graphNodePath+ RPAREN
+
+blankNodePropertyListPath <- LBRACK propertyListPath RBRACK
+
+propertyListPath <- <( var / verbPath )> { p.p = p.label } objectListPath ( SEMICOLON propertyListPath? )?
+
+verbPath <- path
+
+path <- pathAlternative
+
+pathAlternative <- pathSequence ( PIPE pathSequence )*
+
+pathSequence <- pathElt ( SLASH pathElt )*
+
+pathElt <- INVERSE? pathPrimary pathMod?
+
+pathPrimary <- iriref / ISA / NOT pathNegatedPropertySet / LPAREN path RPAREN
+
+pathNegatedPropertySet <- pathOneInPropertySet / LPAREN ( pathOneInPropertySet ( PIPE pathOneInPropertySet )* )? RPAREN
+
+pathOneInPropertySet <- iriref / ISA / INVERSE ( iriref / ISA )
+
+pathMod <- ( STAR / QUESTION / PLUS ) !.
+
+objectListPath <- objectPath ( COMMA objectPath )*
+
+objectPath <- <graphNodePath> { p.o = p.label; p.addStatement(p.s, p.p, p.o) } 
+
+graphNodePath <- varOrTerm / triplesNodePath
+
+solutionModifier <- ( GROUP BY groupCondition+ / HAVING constraint / ORDER BY orderCondition+ / limitOffsetClauses )?
+
+groupCondition <- functionCall / builtinCall / LPAREN expression ( AS var )? RPAREN / var
+orderCondition <- ( ASC / DESC )? brackettedExpression / functionCall / builtinCall / var
+
+limitOffsetClauses <- limit offset? / offset limit?
+
+limit <- LIMIT INTEGER
+
+offset <- OFFSET INTEGER
+
+# Expressions
+
+expression <- conditionalOrExpression
+conditionalOrExpression <- conditionalAndExpression ( OR conditionalOrExpression )?
+conditionalAndExpression <- valueLogical ( AND conditionalAndExpression )?
+valueLogical <- numericExpression ( ( EQ / NE / LT / LE / GE / GT ) numericExpression / in / notin )?
+numericExpression <- multiplicativeExpression ( ( PLUS / MINUS ) multiplicativeExpression / signedNumericLiteral )*
+multiplicativeExpression <- unaryExpression ( ( STAR / SLASH ) unaryExpression )*
+unaryExpression <- ( NOT / MINUS / PLUS )? primaryExpression
+primaryExpression <- brackettedExpression / builtinCall / functionCall / iriref / literal / numericLiteral / booleanLiteral / var / aggregate
+brackettedExpression <- LPAREN expression RPAREN
+functionCall <- iriref argList
+
+in <- IN argList
+notin <- NOTIN argList
+
+argList <- nil / LPAREN expression ( COMMA expression )* RPAREN
+
+aggregate <- count / groupConcat / ( SUM / MIN / MAX / AVG / SAMPLE ) LPAREN DISTINCT? expression RPAREN
+count <- COUNT LPAREN DISTINCT? ( STAR / expression ) RPAREN
+groupConcat <- GROUPCONCAT LPAREN DISTINCT? expression ( SEMICOLON SEPARATOR EQ string )? RPAREN
+
+builtinCall <- (
+                STR /
+                LANG /
+                DATATYPE /
+                IRI /
+                URI /
+                ABS /
+                CEIL /
+                ROUND /
+                FLOOR /
+                STRLEN /
+                UCASE /
+                LCASE /
+                ENCODEFORURI /
+                YEAR /
+                MONTH /
+                DAY /
+                HOURS /
+                MINUTES /
+                SECONDS /
+                TIMEZONE /
+                TZ /
+                MD5 /
+                SHA1 /
+                SHA256 /
+                SHA384 /
+                SHA512 /
+                ISIRI /
+                ISURI /
+                ISBLANK /
+                ISLITERAL /
+                ISNUMERIC
+               ) LPAREN expression RPAREN /
+               (
+                LANGMATCHES /
+                CONTAINS /
+                STRSTARTS /
+                STRENDS /
+                STRBEFORE /
+                STRAFTER /
+                STRLANG /
+                STRDT /
+                SAMETERM
+               ) LPAREN expression COMMA expression RPAREN /
+               BOUND LPAREN var RPAREN /
+               BNODE ( LPAREN expression RPAREN / nil ) /
+               ( RAND / NOW / UUID / STRUUID ) nil /
+               ( CONCAT / COALESCE ) argList /
+               ( SUBSTR / REPLACE / REGEX ) LPAREN expression COMMA expression ( COMMA expression )? RPAREN /
+               IF LPAREN expression COMMA expression COMMA expression RPAREN /
+               ( EXISTS / NOTEXIST ) groupGraphPattern
+
+#
+# Terminals
+#
+
+var <- <('?' / '$') VARNAME> { p.label = buffer[begin:end] } skip
+
+iriref <- iri / prefixedName
+
+iri <- < '<' [^>]* '>' > { p.label = buffer[begin:end] } skip
+
+prefixedName <- pnPrefix? ':' pnLocal skip
+
+literal <- < string ( '@' [[a-z]]+ ('-' ( [[a-z]] / [0-9] )+ )* / "^^" iriref )? > { p.label = buffer[begin:end] } skip
+
+string <- stringLiteralA / stringLiteralB / stringLiteralLongA / stringLiteralLongB
+stringLiteralA <- "'" ( ( [^\0x27\0x5C\0xA\0xD] ) / echar )* "'"
+stringLiteralB <- '"' ( ( [^\0x22\0x5C\0xA\0xD] ) / echar )* '"'
+stringLiteralLongA <- "'''" ( ( "'" / "''" )? ( [^'\\] / echar ) )* "'''"
+stringLiteralLongB <- '"""' ( ( '"' / '""' )? ( [^"\\] / echar ) )* '"""'
+echar <- '\\' [utbnrf\\"']
+
+numericLiteral <- ('+' / '-')? [0-9]+ ('.' [0-9]*)? skip
+signedNumericLiteral <- ('+' / '-') [0-9]+ ('.' [0-9]*)? skip
+
+booleanLiteral <- TRUE / FALSE
+
+blankNode <- blankNodeLabel / anon
+
+# '_:' ( PN_CHARS_U | [0-9] ) ((PN_CHARS|'.')* PN_CHARS)?
+# FIXME: (peg) the rule has too "much" nesting written as above,
+# which makes a problem matching bnode labels
+blankNodeLabel <- "_:" ( pnCharsU / [0-9] ) ( ( pnCharsU / [0-9\-.] )* pnCharsU / [0-9\-] )? skip
+
+anon <- '[' ws* ']' skip
+
+nil <- '(' ws* ')' skip
+
+#
+# Labels
+#
+
+VARNAME <- ( pnCharsU / [0-9] ) ( pnCharsU / [0-9] / '\0x00B7' / [\0x0300-\0x036F] / [\0x203F-\0x2040] )*
+
+pnPrefix <- pnCharsBase pnChars*
+pnLocal <- ( pnCharsU / ':' / [0-9] / plx )*
+
+pnChars <- pnCharsU / '-' / [0-9]
+pnCharsU <- pnCharsBase / '_'
+pnCharsBase <- [a-zA-Z\0x00C0-\0x00D6\0x00D8-\0x00F6\0x00F8-\0x02FF\0x0370-\0x037D\0x037F-\0x1FFF\0x200C-\0x200D\0x2070-\0x218F\0x2C00-\0x2FEF\0x3001-\0xD7FF\0xF900-\0xFDCF\0xFDF0-\0xFFFD\0x10000-\0xEFFFF]
+plx <- percent / pnLocalEsc
+percent <- '%' hex hex
+hex <- [0-9a-fA-Z]
+pnLocalEsc <- '\\' [_~.\-!$&\'()*+,;=/?#@%]
+
+#
+# Tokens
+#
+
+PREFIX <- "PREFIX" skip
+TRUE <- "TRUE" skip
+FALSE <- "FALSE" skip
+BASE <- "BASE" skip
+SELECT <- "SELECT" skip
+REDUCED <- "REDUCED" skip
+DISTINCT <- "DISTINCT" skip
+FROM <- "FROM" skip
+NAMED <- "NAMED" skip
+WHERE <- "WHERE" skip
+LBRACE <- '{' skip
+RBRACE <- '}' skip
+LBRACK <- '[' skip
+RBRACK <- ']' skip
+SEMICOLON <- ';' skip
+COMMA <- ',' skip
+DOT <- '.' skip
+COLON <- ':' skip
+PIPE <- '|' skip
+SLASH <- '/' skip
+INVERSE <- '^' skip
+LPAREN <- '(' skip
+RPAREN <- ')' skip
+ISA <- 'a' { p.label = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>" } skip
+NOT <- '!' skip
+STAR <- '*' skip
+QUESTION <- '?' skip
+PLUS <- '+' skip
+MINUS <- '-' skip
+OPTIONAL <- "OPTIONAL" skip
+UNION <- "UNION" skip
+LIMIT <- "LIMIT" skip
+OFFSET <- "OFFSET" skip
+INTEGER <- [0-9]+ skip
+CONSTRUCT <- "CONSTRUCT" skip
+DESCRIBE <- "DESCRIBE" skip
+ASK <- "ASK" skip
+OR <- "||" skip
+AND <- "&&" skip
+EQ <- '=' skip
+NE <- '!=' skip
+GT <- '>' skip
+LT <- '<' skip
+LE <- '<=' skip
+GE <- '>=' skip
+IN <- "in" skip
+NOTIN <- "not in" skip
+AS <- "AS" skip
+STR <- "STR" skip
+LANG <- "LANG" skip
+DATATYPE <- "DATATYPE" skip
+IRI <- "IRI" skip
+URI <- "URI" skip
+ABS <- "ABS" skip
+CEIL <- "CEIL" skip
+ROUND <- "ROUND" skip
+FLOOR <- "FLOOR" skip
+STRLEN <- "STRLEN" skip
+UCASE <- "UCASE" skip
+LCASE <- "LCASE" skip
+ENCODEFORURI <- "ENCODE_FOR_URI" skip
+YEAR <- "YEAR" skip
+MONTH <- "MONTH" skip
+DAY <- "DAY" skip
+HOURS <- "HOURS" skip
+MINUTES <- "MINUTES" skip
+SECONDS <- "SECONDS" skip
+TIMEZONE <- "TIMEZONE" skip
+TZ <- "TZ" skip
+MD5 <- "MD" skip
+SHA1 <- "SHA1" skip
+SHA256 <- "SHA256" skip
+SHA384 <- "SHA384" skip
+SHA512 <- "SHA512" skip
+ISIRI <- "ISIRI" skip
+ISURI <- "ISURI" skip
+ISBLANK <- "ISBLANK" skip
+ISLITERAL <- "ISLITERAL" skip
+ISNUMERIC <-"ISNUMERIC" skip
+LANGMATCHES <- "LANGMATCHES" skip
+CONTAINS <- "CONTAINS" skip
+STRSTARTS <- "STRSTARTS" skip
+STRENDS <- "STRENDS" skip
+STRBEFORE <- "STRBEFORE" skip
+STRAFTER <- "STRAFTER" skip
+STRLANG <- "STRLANG" skip
+STRDT <- "STRDT" skip
+SAMETERM <- "SAMETERM" skip
+BOUND <- "BOUND" skip
+BNODE <- "BNODE" skip
+RAND <- "RAND" skip
+NOW <- "NOW" skip
+UUID <- "UUID" skip
+STRUUID <- "STRUUID" skip
+CONCAT <- "CONCAT" skip
+SUBSTR <- "SUBSTR" skip
+REPLACE <- "REPLACE" skip
+REGEX <- "REGEX" skip
+IF <- "IF" skip
+EXISTS <- "EXISTS" skip
+NOTEXIST <- "NOT EXISTS" skip
+COALESCE <- "COALESCE" skip
+FILTER <- "FILTER" skip
+BIND <- "BIND" skip
+SUM <- "SUM" skip
+MIN <- "MIN" skip
+MAX <- "MAX" skip
+AVG <- "AVG" skip
+SAMPLE <- "SAMPLE" skip
+COUNT <- "COUNT" skip
+GROUPCONCAT <- "GROUP_CONCAT" skip
+SEPARATOR <- "SEPARATOR" skip
+ASC <- "ASC" skip
+DESC <- "DESC" skip
+ORDER <- "ORDER" skip
+GROUP <- "GROUP" skip
+BY <- "BY" skip
+HAVING <- "HAVING" skip
+GRAPH <- "GRAPH" skip
+MINUSSETOPER <- "MINUS" skip
+SERVICE <- "SERVICE" skip
+SILENT <- "SILENT" skip
+
+skip <- ( ws / comment )*
+
+ws <- '\040' / '\t' / '\f' / '\v' / endOfLine
+
+comment <- '#' (!endOfLine .)* endOfLine
+
+endOfLine <- '\r\n' / '\n' / '\r'
+
