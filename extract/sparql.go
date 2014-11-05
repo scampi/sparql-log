@@ -25,7 +25,7 @@ import (
 type LogFormat uint
 
 const (
-    // http://wiki.apache.org/tomcat/FAQ/Logging
+    // Apache Combined Log Format http://httpd.apache.org/docs/current/logs.html
     TOMCAT LogFormat = iota
 )
 
