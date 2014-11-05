@@ -3,7 +3,7 @@
 package qparser
 
 type SparqlGraph Peg {
-    *Schema
+    *schema
     label, s, p, o string
 }
 

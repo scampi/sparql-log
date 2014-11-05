@@ -1,3 +1,4 @@
+// Parses a SPARQL query and extract its structure and connected components
 package qparser
 
 import (
@@ -7,11 +8,17 @@ import (
     "sort"
 )
 
+// ConnectedComponent represents a part of the SPARQL query
+// where all variables are connected to each other.
 type ConnectedComponent struct {
+    // The patterns of the connected component
     Body string
+    // Complexity informs how many stars there are
+    // and their number of triple patterns
     Complexity []int
 }
 
+// ConnectedComponents is a list of ConnectedComponent
 type ConnectedComponents []ConnectedComponent
 
 func (ccs ConnectedComponents) Len() int {
@@ -28,27 +35,31 @@ func (ccs ConnectedComponents) Swap(i, j int) {
     ccs[j] = tmp
 }
 
-type Schema struct {
+// Schema contains the structure of the SPARQL query,
+// which consists in its predicates and classes.
+type schema struct {
     sts map[string]map[string][]string
     cnt int
     vars map[string]string
 }
 
-func NewSchema() *Schema {
-    s := Schema{}
+func Newschema() *schema {
+    s := schema{}
     s.sts = make(map[string]map[string][]string)
     s.vars = make(map[string]string)
     return &s
 }
 
-// Reset initialises the SparqlGraph
+// Reset initialises the SparqlGraph with the given SPARQL query
 func Reset(sg *SparqlGraph, query string) {
-    sg.Schema = NewSchema()
+    sg.schema = Newschema()
     sg.Buffer = query
     sg.Init()
 }
 
-func (s *Schema) getVar(str string) string {
+// GetVar returns a new variable name for the given term,
+// either a literal, a bnode, a uri, or a variable.
+func (s *schema) getVar(str string) string {
     if v,ok := s.vars[str]; ok {
         return v
     }
@@ -58,7 +69,8 @@ func (s *Schema) getVar(str string) string {
     return strVar
 }
 
-func (schema *Schema) addStatement(s, p, o string) {
+// AddStatements adds the spo triple pattern to the query's schema
+func (schema *schema) addStatement(s, p, o string) {
     if p[0] == '?' {
         return
     }
@@ -84,16 +96,20 @@ func (schema *Schema) addStatement(s, p, o string) {
     }
 }
 
-func getKey(s string, ccs map[string][]string) (string, bool) {
+// GetKey returns the key associated with the SPARQL variable,
+// and a boolean indicating if a key was found.
+// A key is a string which the variable is a substring of.
+func getKey(varName string, ccs map[string][]string) (string, bool) {
     for k := range ccs {
-        if strings.Contains(k, s) {
+        if strings.Contains(k, varName) {
             return k, true
         }
     }
-    return s, false
+    return varName, false
 }
 
-func (schema *Schema) ConnectedComponents() (ar ConnectedComponents) {
+// ConnectedComponents returns the connected components of the SPARQL query.
+func (schema *schema) ConnectedComponents() (ar ConnectedComponents) {
     // map of connected components
     // the key is the set of variables part of a component
     ccs := make(map[string][]string)

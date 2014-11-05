@@ -1050,7 +1050,7 @@ func (t *tokens32) Expand(index int) tokenTree {
 }
 
 type SparqlGraph struct {
-	*Schema
+	*schema
 	label, s, p, o string
 
 	Buffer string

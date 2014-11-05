@@ -1,3 +1,6 @@
+// Package extract parses SPARQL log files and retrives SPARQL queries.
+// The connected components of the query's structure are extracted and
+// written to files depending on a connected component complexity.
 package extract
 
 import (
@@ -18,9 +21,11 @@ import (
     "compress/gzip"
 )
 
+// The format of the log files
 type LogFormat uint
 
 const (
+    // http://wiki.apache.org/tomcat/FAQ/Logging
     TOMCAT LogFormat = iota
 )
 
@@ -32,6 +37,7 @@ func (lf LogFormat) String() string {
     return logFormats[lf]
 }
 
+// Set method needed for the flag package
 func (lf LogFormat) Set(s string) error {
     s = strings.ToUpper(s)
     switch s {
@@ -41,6 +47,9 @@ func (lf LogFormat) Set(s string) error {
     return fmt.Errorf("Unknown log format: [%v]", s)
 }
 
+// Extract process the log files in input with the given format, and dumps the
+// connected components into output's subfolders by the component's complexity.
+// Input log files may be Bzip2 or Gzip compressed.
 func Extract(logFormat LogFormat, input, output string) {
     files, err := ioutil.ReadDir(input)
     if err != nil {
@@ -129,6 +138,7 @@ func Extract(logFormat LogFormat, input, output string) {
 
 var tomcatReg *regexp.Regexp = regexp.MustCompile("query=([^ ]+)")
 
+// Tomcat reads the log file line by line and returns the decoded SPARQL query.
 func tomcat(data []byte, atEOF bool) (advance int, token []byte, err error) {
     for {
         advance, token, err = bufio.ScanLines(data, atEOF)

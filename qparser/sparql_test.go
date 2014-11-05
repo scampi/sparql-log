@@ -10,6 +10,7 @@ import (
 func sortPatterns(data ConnectedComponents) {
     for i := range data {
         ar := strings.Split(data[i].Body, "\n")
+        ar = ar[:len(ar)-1] // Remove the last empty element due to the trailing \n
         sort.Strings(ar)
         data[i].Body = strings.Join(ar, "\n") + "\n"
     }
@@ -35,7 +36,8 @@ func assert(t *testing.T, query string, expected ConnectedComponents) {
 
 func TestEmptyPnLocal(t *testing.T) {
     q := `
-    Select ?name ?population ?lat ?long from lgd: 
+    select *
+    from lgd: 
     { 
         ?s ?p ?o
     }
